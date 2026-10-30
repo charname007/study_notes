@@ -17,6 +17,20 @@ tags:
 ## 核心问题
 自注意力对图像修复是必要的（CNN 感受野有限、权重静态，第 2 页），但标准 SA 的开销随空间分辨率**二次增长**：`O(W²H²)`（第 3 页）。当时方案（SwinIR/Uformer 的 8×8 窗、IPT 的 48×48 patch）都在"收缩注意力空间范围"，论文原话是这样做 *"defying the main motivation of using self-attention over convolutions"*（第 3 页）。
 
+## 架构图（论文 Fig. 2，第 3 页）
+
+![Restormer 架构图 Fig2](Restormer%20架构图%20Fig2.png)
+
+<small>裁自论文第 3 页 Figure 2，仅取图本体与图例，已去除该页正文与图注文字。</small>
+
+**怎么读这张图：**
+
+- **骨架（左→右）**：`Degraded I` → 3×3 卷积得浅层特征 `F₀`（H×W×C） → 4 级编码器 `Block×L₁₋₄`，每级经 **Downsample**（红色▼，pixel-unshuffle）分辨率减半、通道翻倍 → 最深 `H/8×W/8×8C`（`F_l`）→ 解码器逐级 **Upsample**（绿色▲，pixel-shuffle）回升，每级与编码器特征 **Concatenation**（⊕外的 ○ 符号）后接 1×1 把通道砍半 → `F_d`（H×W×2C）→ **Refinement**（`Block×L_r`，高分辨率精修）→ `F_r` → 3×3 卷积出残差图 `R`（H×W×3）→ 与输入 **Element-wise Addition** 得 `Restored (Î)`。
+- **解码器最上层**那条横向长箭头是 `H×W×C` 的跳连，直接跨过整个网络接到 level-1，用于保住细粒度纹理。
+- **图右下 (a) MDTA**：输入 `X` 经 Norm 得 `Y`，分成 Q/K/V 三支，每支都是 `1×1`（跨通道）→ `3×3 Dconv`（跨空间）→ Reshape。Q、K 转置后做 **矩阵乘法 ⊗**（图上标 `C×HW`，即通道维变长），Softmax 得 **`Ĉ×Ĉ` 的转置注意力图 A**（那个灰色小方块就是它，注意尺寸与输入无关）→ 与 V 相乘 → Reshape → 1×1 → 与输入 **⊕**。
+- **图右上 (b) GDFN**：输入 `X` 经 Norm 后分两支，各走 `1×1` → `3×3 Dconv`，通道升到 `Ĥ×Ŵ×γĈ`（γ 为扩展比，论文取 2.66）；**上支过 GELU（⊙里的 φ）**，两支做 **逐元素乘 ⊙**（门控）→ 1×1 降回 `C` → 与输入 **⊕**。
+- **对照代码**：图中 (a)(b) 的连线与代码笔记 [[Restormer 的 MDTA 与 GDFN 实现]] 里的 `Attention`/`FeedForward` 一一对应；红色▼/绿色▲ 对应 [[像素重排：PixelUnshuffle 与 PixelShuffle]] 里的 `Downsample`/`Upsample`。
+
 ## 关键方法（四条创新点）
 
 ### 1. MDTA：注意力搬到通道维（第 3–4 页）

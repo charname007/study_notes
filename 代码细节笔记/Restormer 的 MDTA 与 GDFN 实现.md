@@ -18,6 +18,10 @@ tags:
 
 ### 1. MDTA —— 注意力搬到通道维（论文第 3–4 页，eq(1)）
 
+![MDTA 模块图（论文 Fig. 2a）](Restormer%20MDTA%20模块图.png)
+
+<small>裁自论文第 3 页 Figure 2(a)。读图：`Y` 分三支各走 1×1 → 3×3 Dconv → Reshape；Q、K 转置后矩阵乘（`C×HW`），Softmax 出 **`Ĉ×Ĉ`** 的转置注意力图 A；再与 V 相乘 → Reshape → 1×1 → 残差 ⊕。</small>
+
 公式：
 
 $\hat{X}=W_p\,\text{Attn}(\hat{Q},\hat{K},\hat{V})+X,\qquad \text{Attn}=\hat{V}\cdot\text{Softmax}\!\left(\hat{K}\hat{Q}/\alpha\right)$
@@ -73,6 +77,10 @@ class Attention(nn.Module):
 4. `heads=[1, 2, 4, 8]` —— level-1 分头数是 **1**，最高分辨率那层其实是单头，分头只在更深的低分辨率层展开。
 
 ### 2. GDFN —— 门控 + 深度卷积的前馈网络（论文第 4 页，eq(2)）
+
+![GDFN 模块图（论文 Fig. 2b）](Restormer%20GDFN%20模块图.png)
+
+<small>裁自论文第 3 页 Figure 2(b)。读图：Norm 后分两支各走 1×1 → 3×3 Dconv 升到 `γĈ`；上支过 GELU（⊙ 里的 φ），两支逐元素乘做门控；再 1×1 降回 `C`，与输入 ⊕。</small>
 
 公式：
 
