@@ -99,6 +99,8 @@ $$H_\ell^t = f_\ell\big(N(W_\ell * H_{\ell-1}^t + b_{W_\ell}) + N(U_\ell^t * H_L
 - **t = 2 行（下半）**：把反馈按 ⊕ 加回各层，重新前向，得到更精细的 saliency map（右下）。
 - **关键点**：反馈**不是**把上一时刻的 saliency map 拼回原图（RFCN 的做法），而是把**顶层特征**变成逐层可学习的参数注入——这正是本文与 RFCN 的本质差别。
 
+**代码情况**（GitHub 检索结果）：官方仓库 [zhangxiaoning666/PAGR](https://github.com/zhangxiaoning666/PAGR) **只有 README** —— 提供九个数据集（DUTS / ECSSD / HKU-IS / DUT-OMRON / PASCAL-S / SED1 / SED2 / SOD / THUR）saliency maps 的百度网盘（提取码 `tpdz`）与 Google Drive 链接，**未开源训练代码**。第三方 `TracyMok/PAGRnet`（1 star，2021 最后更新）仅 README + LICENSE，无实现。故本篇无代码可对照，实现细节需依公式 (1)–(9) 与 Fig.2 自行复现。
+
 ## 结论与局限
 
 **实验设置**（§4.1，第 6 页）：VGG19 主干、Caffe 实现、输入 353×353、训练集 DUTS-train（10,553 张）、固定学习率 1e-10、weight decay 0.0005；在 6 个基准数据集上评测（ECSSD / HKU-IS / THUR15K / PASCAL-S / DUT-OMRON / DUTS-test），指标为 PR 曲线、F-measure（β²=0.3）、MAE、S-measure。
