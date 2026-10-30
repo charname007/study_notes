@@ -103,18 +103,7 @@ $$H_\ell^t = f_\ell\big(N(W_\ell * H_{\ell-1}^t + b_{W_\ell}) + N(U_\ell^t * H_L
 
 **实验设置**（§4.1，第 6 页）：VGG19 主干、Caffe 实现、输入 353×353、训练集 DUTS-train（10,553 张）、固定学习率 1e-10、weight decay 0.0005；在 6 个基准数据集上评测（ECSSD / HKU-IS / THUR15K / PASCAL-S / DUT-OMRON / DUTS-test），指标为 PR 曲线、F-measure（β²=0.3）、MAE、S-measure。
 
-**主要结果**（Table 1，第 7 页，对比 13 个 SOTA）：
-
-| 数据集 | MAE ↓ | F-measure ↑ |
-|---|---|---|
-| ECSSD | 0.064 | **0.891** |
-| HKU-IS | 0.048 | **0.886** |
-| THUR15K | 0.070 | **0.729** |
-| PASCAL-S | 0.092 | **0.803** |
-| DUT-OMRON | 0.072 | 0.711 |
-| DUTS | 0.055 | **0.788** |
-
-论文称 *"Our algorithm ranks first on almost all datasets"*（第 7 页）。
+**主要结果**（Table 1，第 7 页，对比 13 个方法）：6 个数据集 F-measure 全面领先 —— ECSSD **0.891**、HKU-IS **0.886**、PASCAL-S **0.803**、DUTS **0.788**、THUR15K **0.729**、DUT-OMRON **0.711**；MAE 同步最低（HKU-IS **0.048**、DUTS **0.055**、ECSSD **0.064**）。论文原话 *"ranks first on almost all datasets"*（第 7 页）。
 
 **消融**（Table 2，第 8 页）：
 - CA 与 SA 单独都有效，**组合（CSA）最佳**
