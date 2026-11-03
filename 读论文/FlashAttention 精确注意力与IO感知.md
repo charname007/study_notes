@@ -46,7 +46,7 @@ tags:
 
 反向传播本来需要 `S, P ∈ R^{N×N}`。作者改为：只存输出 `O` 和 softmax 统计量 `(m, ℓ)`，反向时**用 SRAM 里的 Q、K、V 块把 S 和 P 重新算一遍**（第 5 页）。
 
-这本质是**选择性梯度检查点**（selective gradient checkpointing），但关键的差别是：常规 checkpointing 都是「拿速度换显存」，而这里**因为省掉了 HBM 往返，重算反而更快**（第 5 页 + Fig. 2）。这是全篇最反直觉、也最漂亮的一点。
+这本质是**选择性梯度检查点**（[[SVTR 场景文本识别]]selective gradient checkpointing），但关键的差别是：常规 checkpointing 都是「拿速度换显存」，而这里**因为省掉了 HBM 往返，重算反而更快**（第 5 页 + Fig. 2）。这是全篇最反直觉、也最漂亮的一点。
 
 ### 3. IO 复杂度：给出了下界
 
