@@ -1,6 +1,6 @@
 ---
 created: 2026-11-06
-source: E:\\.dsh-paper-reader\\data\\默认专题\\Long 等 - 2025 - Progressive Focused Transformer for Single Image Super-Resolution.pdf（arXiv:2503.20337v1，2025-03-26）
+source: E:/.dsh-paper-reader/data/默认专题/Long 等 - 2025 - Progressive Focused Transformer for Single Image Super-Resolution.pdf（arXiv:2503.20337v1，2025-03-26）
 type: 论文
 tags: [论文, Transformer, Attention, 超分辨率]
 ---
