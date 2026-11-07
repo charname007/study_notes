@@ -1,6 +1,6 @@
 ---
 created: 2026-11-07
-source: E:\\.dsh-paper-reader\\data\\小波变换\\Cui 等 - 2026 - StarIR Convolutional Image Restoration With Spatial-Frequency Fusion.pdf（IEEE TPAMI，2026，DOI 10.1109/TPAMI.2026.3672465）；官方代码 https://github.com/c-yn/StarIR（commit fc5f368，2026-04-09）
+source: E:\.dsh-paper-reader\data\小波变换\Cui 等 - 2026 - StarIR Convolutional Image Restoration With Spatial-Frequency Fusion.pdf（IEEE TPAMI，2026，DOI 10.1109/TPAMI.2026.3672465）；官方代码 https://github.com/c-yn/StarIR（commit fc5f368，2026-04-09）
 type: 论文
 tags: [论文, 图像复原, 频域, 多尺度]
 ---
