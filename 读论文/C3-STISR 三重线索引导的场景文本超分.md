@@ -1,6 +1,7 @@
 ---
 created: 2026-11-07
-source: E:\.dsh-paper-reader\data\默认专题\Zhao 等 - 2022 - C3-STISR Scene Text Image Super-resolution with Triple Clues.pdf（arXiv:2204.14044；代码 https://github.com/zhaominyiz/C3-STISR）
+updated: 2026-11-11
+source: E:\.dsh-paper-reader\data\SR\C3-STISR\C3-STISR.pdf（arXiv:2204.14044；代码 https://github.com/zhaominyiz/C3-STISR）
 type: 论文
 tags: [论文, 场景文本识别, 超分辨率, 可变形卷积]
 ---
@@ -13,6 +14,20 @@ tags: [论文, 场景文本识别, 超分辨率, 可变形卷积]
 
 在"拿识别器反馈当先验"的 STISR 路线上补两条线索——把识别串**渲染成字形图**当视觉线索、用**字符级语言模型**纠错当语言线索——三条线索各自投影成像素级特征图后，用门控融合成统一的 $h_t$ 去指导 TSRN 骨架。TextZoom 上 CRNN 平均识别率 53.7%（前最佳 TG 48.9%，+4.8），ASTER 64.1%。
 
+## 要点提炼（速览）
+
+1. **定位**：STISR 是文本识别的前处理，4× 放大。TextZoom 上同一张图 HR 识别率 72.4%、BICUBIC 只有 26.8%（表 1，p.5），这段差距就是本赛道要啃的空间。
+2. **诊断（本文的出发点）**：现有 clue-guided 方法只把识别器的**概率分布 PD** 当线索，有两个硬伤——① 模态鸿沟（PD 是字符分布，STISR 是像素级任务）；② 不准确（识别器在 LR 上只有 26.8%，错先验会反过来误导超分）（p.2）。
+3. **类比**：人补糊字不只靠看，还会用**字形结构**和**语言常识**去猜——这就是补出来的两条线索（p.2）。
+4. **三线索**：$h_{rec}$（识别 PD）、$h_{vis}$（把解码出的字符串用 PIL 渲染成黑白字图，每张 LR 图渲大小写两版）、$h_{ling}$（预训练字符级双向 cloze 网络纠错后的 PD）。
+5. **统一化**：三条各自投影成 $C'\times N$（$C'=32$）的像素特征图，再过 DSTA 把不确定信息掩掉；$h_{vis}$ 额外用 **deformable conv 以 $h_{rec}$ 为条件做对齐补偿**。
+6. **融合**：三条同模态后，用 softmax 掩码的**门控融合**逐像素加权成统一的 $h_t$——作者的理由是"模态鸿沟已经被投影和对齐消掉了，简单门控就够"。
+7. **骨架**：STN（治 TextZoom 人工裁剪的像素偏移）+ 5 个 TSRN block（$h_t$ 在每层卷积特征处按通道 concat）+ pixel shuffle；损失用 $L_{pix}$ 管保真 + $L_{txt}$ 管识别。
+8. **训练**：三阶段——LM"拼写破坏—还原"预训练 → 识别/视觉支预训练 → 整体微调（避免洗掉语言知识）；另外用蒸馏损失把 HR 的识别结果灌给 LR 的识别器与 LM。
+9. **成绩**：CRNN 平均 **53.7**（前最佳 TG 48.9，+4.8；TSRN 41.4、HR 上限 72.4），MORAN 60.5、ASTER 64.1；PSNR 21.51 / SSIM 77.21（p.5 表 1–2）。
+10. **消融里最值钱的**：deformable 对齐补偿 49.4 → 51.7（掉得最多的一项）、多阶段训练 +2.6、DSTA +2.0、识别器微调 +1.9。
+11. **要警惕的两点**（我读表 5 得出的，非作者结论）：$h_{rec}+h_{ling}$ 已是 53.7，加进 $h_{vis}$ **平均识别率一点没涨**，只在 PSNR 上补了 21.28 → 21.51；SSIM 77.21 **低于** PCAN 的 77.53，摘要里 "outperforms SOTA in fidelity" 站得并不稳。
+
 ## 核心问题
 
 已有的 clue-guided 方法只用识别器的**概率分布（PD）**当线索，作者指出两个硬伤（p.1 摘要、p.2）：
@@ -21,6 +36,18 @@ tags: [论文, 场景文本识别, 超分辨率, 可变形卷积]
 2. **信息不可靠（Inaccuracy）**：识别器本身就会错——在 LR/HR 图上识别率只有 **26.8% / 72.4%**（p.2）——把错的 PD 喂回去会反过来误导超分。
 
 Fig. 1(c) 就是把这件事画出来：识别器读成 "blrd"，真值是 "bird"，用这份 PD 引导出来的 SR 仍然读 "blrd"。作者的类比是"人怎么补糊字"：除了看图，还会靠字形结构和语言知识去猜。
+
+![C3-STISR 三类线索引导对比 Fig1](C3-STISR%20三类线索引导对比%20Fig1.png)
+
+<small>裁自论文第 1 页 Figure 1，仅取图本体与标注。</small>
+
+**怎么读这张图**（三行依次对应三种做法，最右列是同一张 SR 输出被识别成什么）：
+
+- **(a) generic SR**：只吃 LR 图、只受 pixel loss 监督。输出和 LR 一样糊，读成 "blrd"——纯像素监督学不到字。
+- **(b) 现有 clue-guided**：把识别器的 PD（右下角红点阵，"a PD of blrd"，红点=错）直接当线索喂进 SR，输出照样读 "blrd"——**错的先验被原样继承**，这正是本文要开刀的地方。
+- **(c) 本文三重线索**：同一个 PD 分三路。绿路走 Language model，把 "blrd" 的 PD 纠成 "bird" 的 PD（图上第二个红点阵，已变成 correct）；黄路保留识别 PD 本身；蓝路走 Skeleton painter，把解码出的字符串画成上下两版黑白字图（大写 "BLRD" / 小写 "blrd"）。三路在 Fusion（那个 θ 形符号）处门控融合成 $h_t$，最后 SR 输出的 "B" 明显更实、被读成 "bird"。
+
+> 这张图最值钱的信息是：**线索不是越多越好，而是错的那条要能被另一条纠回来**。(b)→(c) 之间 SR 质量的差别，几乎全来自"语言线索把错字改对了"和"字形图给回了笔画结构"。
 
 ## 关键方法
 
@@ -41,7 +68,7 @@ Fig. 1(c) 就是把这件事画出来：识别器读成 "blrd"，真值是 "bird
 
 > 一个易读错的地方：图上 Projection network 和 DSTA 各只画了一个紫框，**看起来像三条线索共享**；但正文说 $f_{ling}$"similar to $f_{rec}$, consists of a projection network and a DSTA block"（p.4），消融里也写"we stack **three** DSTA blocks in our clue extraction branch"（p.6）——**每条线索各一套**，图是为了省地方。
 
-### 1. 超分骨架（p.4）
+### 1. 超分骨架（p.3）
 
 四点设计：① TextZoom 的 LR-HR 对是人手工裁的，有像素级偏移，所以先接 STN；② 5 个改造过的 TSRN block，线索 $h_t$ 在每个 block 的卷积特征处按通道 concat；③ pixel shuffle 上采样（结构同 [[像素重排：PixelUnshuffle 与 PixelShuffle]]）；④ 两个损失分工——$L_2$ 像素损失管保真、text-focused loss [Chen et al., 2021a] 管识别：
 
