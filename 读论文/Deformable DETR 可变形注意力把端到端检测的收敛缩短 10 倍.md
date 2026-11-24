@@ -105,6 +105,34 @@ $$\hat b_q=\{\sigma(b_{qx}+\sigma^{-1}(\hat p_{qx})),\ \sigma(b_{qy}+\sigma^{-1}
 - **右侧 Decoder**：底部是 **Object Queries**（彩色小方块），往上每一级都有红色虚线箭头（多尺度可变形交叉注意力，从编码器输出取特征）和黑色虚线箭头（query 之间的标准自注意力）。**只有红色那条被换掉了**，黑色照旧；
 - **最右上的 Bounding Box Predictions**：每个 query 落在原图上的框；整张图里没有 NMS，也没有 anchor 网格。
 
+
+### 6. 框与类别到底怎么生成：检测头 + 迭代精修的完整链（第 4 页 DETR 综述；第 6、7、12–13 页；官方代码确认）
+
+这是把前面「参考点 / 采样 / 逐层精修」串成实际输出的一步。解码器输出 N=300 个 query embedding（第 7 页），每个 embedding 接两个小头（第 4 页：“A 3-layer FFN and a linear projection are added on top of the object query features … The FFN acts as the regression branch … The linear projection acts as the classification branch”）：
+
+| 头 | 结构 | 输出 | 证据 |
+|---|---|---|---|
+| 分类头 | 一个线性层 | 每类的 logits（含 $\varnothing$ 类） | 第 4 页；代码 `class_embed = nn.Linear(d_model, num_classes)` (`deformable_detr.py:54`) |
+| 回归头 | 3 层 FFN（256→256→4） | 框的 4 个未归一化数 $(b_x,b_y,b_w,b_h)$ | 第 4 页；代码 `bbox_embed = MLP(hidden_dim, hidden_dim, 4, 3)` (`deformable_detr.py:55`) |
+
+训练时分类用 **Focal Loss（权重 2）**（第 7 页），代码进一步是 `sigmoid_focal_loss(..., alpha=0.25, gamma=2)` + 逐类 sigmoid / one-hot 目标（`deformable_detr.py:238`）；监督信号仍来自 DETR 的匈牙利二分匹配（第 4 页），一对一匹配使推理不需要 NMS。
+
+**生成一条预测的完整链（以第 $d$ 层为例）：**
+
+1. query embedding 经线性层 + sigmoid 得到参考点 $\hat p_q$（第 6 页）；
+2. 多尺度可变形交叉注意力**围绕 $\hat p_q$** 从四级特征图采 $L\times K$ 个点并加权聚合，更新 embedding；
+3. 分类头出类别 logits；回归头出相对参考点的偏移，按附录 A.3（第 12 页）解码成框：
+
+$$\hat b_q=\{\sigma(b_{qx}+\sigma^{-1}(\hat p_{qx})),\ \sigma(b_{qy}+\sigma^{-1}(\hat p_{qy})),\ \sigma(b_{qw}),\ \sigma(b_{qh})\}$$
+
+$\sigma^{-1}$ 把参考点映到无界空间、加偏移后再 $\sigma$ 压回 $[0,1]$；这一步让「看哪里」和「预测什么」强绑定，加速收敛（第 6 页）。代码对应 `deformable_detr.py:166-174`：`reference = inverse_sigmoid(reference)` → `tmp = bbox_embed[lvl](hs[lvl])` → 中心加偏移 → `tmp.sigmoid()`。
+
+4. **下一层把刚预测的框当新参考点**：$\hat b_q^d=\{\sigma(\Delta b^d_{qx}+\sigma^{-1}(\hat b^{d-1}_{qx})),\dots\}$，初始框 $w=h=0.1$（附录 A.4，第 12 页），每层预测头**参数不共享**，梯度在 $\sigma^{-1}(\hat b^{d-1})$ 处截断；第 $d$ 层交叉注意力的采样偏移还按上一层框的宽高缩放 $\Delta p\cdot\hat b^{d-1}_{w,h}$。代码是 `deformable_transformer.py:341-351`：`new_reference_points = (tmp + inverse_sigmoid(reference_points)).sigmoid()`，随后 `.detach()`。
+
+每一层都挂辅助损失，推理取最后一层的 `pred_logits` / `pred_boxes`（代码 `deformable_detr.py:180`，辅助输出走 `aux_outputs`）。Table 1（第 8 页）显示这条「逐层改写框」的链本身值钱：基础 43.8 → 开迭代精修 **45.4（+1.6）** → 加两阶段 **46.2**。
+
+> **为什么中间层需要框，而不只是最后输出一个框？** 值得澄清：交叉注意力的采样**只需要参考点这一个 2D 坐标**，严格说中间层并不「需要」完整的 4 维框才能采样。但把框喂回参考点有两个论文给出的理由：① 采样偏移按框宽高调制（附录 A.4，第 12 页），使采样点分布**贴合物体尺度与形状**——初始 8 方向小网格对一个大物体显然不够，框给出了尺度信息；② 多尺度下参考点是 4 维 `(x,y,w,h)`（代码 `reference_points.shape[-1] == 4` 分支，`deformable_transformer.py:332-345`），宽高本身参与采样位置计算。所以中间框不是「多余的输出」，而是**给下一层采样的条件信号**。只保留最后一层预测、放弃迭代精修，作者测了：43.8 vs 45.4，**掉 1.6 AP**（第 8 页 Table 1）。
+
 ## 实验与结论
 
 设置（第 7 页）：COCO 2017；ResNet-50（ImageNet 预训练）；$M=8$、$K=4$；无 FPN；编码器参数跨层共享；把 DETR 的分类换成 **Focal Loss（权重 2）**、object query 从 100 加到 300（为公平对比也报了同样改动的 DETR-DC5+）；默认 **50 epoch**，第 40 epoch 学习率 ×0.1；Adam，基础 lr $2\times10^{-4}$、wd $10^{-4}$，预测参考点/采样偏移的线性层 lr ×0.1；V100 计时。
@@ -196,6 +224,7 @@ $$\hat b_q=\{\sigma(b_{qx}+\sigma^{-1}(\hat p_{qx})),\ \sigma(b_{qy}+\sigma^{-1}
 - [ ] 编码器参数「在各特征层间共享」（第 7 页）——共享与不共享差多少？这决定它到底是「一个跨层注意力」还是「四个独立注意力」。
 - [ ] 附录 A.4 里按层的尺度先验 $2^{l_i-1}s$（$s=0.05$）很像手工先验：所谓「完全端到端」在工程上仍残留多少启发式？
 - [ ] 如果把可变形注意力换进解码器的**自注意力**（而非只换交叉注意力），去重能力会变好还是变差？能否对上 DETR 笔记里「NMS 在深层失效」的观察？
+- [ ] **中间框到底是不是必要的？** 采样本身只需要参考点（2D 坐标），为什么每层都要回喂完整的 4 维框？论文只给了「按框宽高调制采样偏移」（附录 A.4，第 12 页）这一条理由，消融也只有「开/关迭代精修」的 +1.6 AP，没有拆出「只前传参考点、不回喂宽高」的中间配置——这是最容易做但论文没做的对照。
 
 ## 关键摘录
 
@@ -210,6 +239,10 @@ $$\hat b_q=\{\sigma(b_{qx}+\sigma^{-1}(\hat p_{qx})),\ \sigma(b_{qy}+\sigma^{-1}
 > "Top scoring bounding boxes are picked as region proposals. No NMS is applied before feeding the region proposals to the second stage."（第 7 页，§4.2）
 
 > "Our proposed Deformable DETR has on par FLOPs with Faster R-CNN + FPN and DETR-DC5. But the runtime speed is much faster (1.6×) than DETR-DC5, and is just 25% slower than Faster R-CNN + FPN."（第 8 页，§5.1）
+
+> "A 3-layer feed-forward neural network (FFN) and a linear projection are added on top of the object query features … The FFN acts as the regression branch to predict the bounding box coordinates … The linear projection acts as the classification branch."（第 4 页，§3 DETR 综述）
+
+> "Because the multi-scale deformable attention module extracts image features around the reference point, we let the detection head predict the bounding box as relative offsets w.r.t. the reference point to further reduce the optimization difficulty."（第 6 页，§4.1）
 
 ## 相关笔记
 
