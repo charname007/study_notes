@@ -1,6 +1,6 @@
 ---
 created: 2026-11-07
-updated: 2026-11-11
+updated: 2026-11-25
 source: E:\.dsh-paper-reader\data\SR\C3-STISR\C3-STISR.pdf（arXiv:2204.14044；代码 https://github.com/zhaominyiz/C3-STISR）
 type: 论文
 tags: [论文, 场景文本识别, 超分辨率, 可变形卷积]
@@ -152,6 +152,7 @@ $$L=\alpha_1L_{pix}+\alpha_2L_{txt}+\alpha_3L_{rec}+\alpha_4L_{ling}$$
 
 ## 相关笔记
 
+- [[文本聚焦损失]] — 对本文 $L_{txt}$ 的注意力图 L1 + KL 识别分布做概念拆解，并与 STT / LEMMA 的加权交叉熵写法对照
 - [[VTCTSRN 视觉文本线索迁移的场景文本超分]] — 同一赛道（TextZoom / STISR）的**后继**：同样是"渲染字形图当先验"，但指出按同位融合会出伪影，改成图侧可变形采样 + 跨注意力；ASTER 70.8 vs 本文 64.1，可直接对读"同位 DCN 对位 vs 跨图采样"
 - [[TextZoom 与 TSRN 真实场景文本图像超分]] — **本赛道的数据集与方法源头**（ECCV'20）：TextZoom 真实成对数据 + TSRN（5×SRB / 中心对齐 / 梯度轮廓损失），本文骨架直接沿用其 5 个 TSRN block；CRNN 平均 41.4% 是本文 53.7% 的对比基线
 - [[TPWGAN 小波域判别器引导的场景文本超分]] — 同一赛道的另一条路：完全不碰先验，只改监督（小波域损失 + 频域判别器），基线是 TATT；两篇正好代表"先验侧"与"监督侧"两种改进
