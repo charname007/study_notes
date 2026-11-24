@@ -359,6 +359,32 @@ $L_{Hungarian}(y, yhat) = sum_i [ -log p_{sigma(i)}(c_i) + 1_{c_i != 空} L_{box
 **两个佐证**：① 两阶段训练是「冻结全部权重，只训 mask head 25 epoch」（第 15 页）——如果 mask head 要出框，这个冻结方案根本不成立；② 第 15 页明说 mask head「predicts a binary mask for each of the predicted boxes」——框是**给定条件**，掩码才是它的输出。
 
 顺带一个细节：本文**没有**把框坐标当特征喂给 mask head 做 ROI 裁剪或位置偏置——第 4 页批评同类方法时说它们用了「proposal box coordinates」这类人工上下文特征，而本文要尽量减少先验。掩码定位完全靠「decoder embedding 去 query encoder 特征图」的注意力实现。
+### 追问：既然有掩码了，为什么还需要框？
+
+**论文的官方答案只有一句（第 15 页）**：Predicting boxes is required for the training to be possible, since the Hungarian matching is computed using distances between boxes——**匈牙利匹配要用框距离算，所以不预测框就没法训练**。展开成三层：
+
+**① 顺序是「框 → 匹配 → 身份 → 掩码」，不能反过来（第 14–15 页）**
+
+DETR 的骨架是集合预测，第一步永远是「哪个槽位配哪个真值」。这个配对需要一个能**快速算距离**的几何量：框距离 = GIoU + L1（第 5 页），用 min/max 线性函数实现，论文特意说它「makes the loss sufficiently well-behaved for stochastic gradients」（第 21 页）。匹配完成后，每个槽位才拿到确定的真值身份，mask head 才能「为每个预测框输出一个二值掩码」并**按对象独立监督**（第 15 页）。所以掩码不是框的替代品，而是**挂在匹配结果上的下游输出**。
+
+**② 两阶段训练把因果锁死了（第 15 页）**
+
+作者最终选的方案是「先只训框 → 冻结全部权重 → 只训 mask head 25 epoch」。第一阶段模型**根本没有 mask 输出**，匹配只能靠框。若改用 mask 做匹配，就得先生成 mask、就得联合训练；而作者说联合训练与两阶段结果相近、后者更省时间。
+
+**③ 推理时框仍在工作（第 16 页、第 21 页）**
+
+- 置信度 < 85% 的过滤用的是检测头的置信度，不是 mask 分数（第 16 页）；
+- DICE loss 按 batch 内物体数归一化（第 21 页），这个「物体数」来自匹配上的框；
+- argmax 之后按 stuff 类合并、丢 < 4 像素空 mask（第 16 页），判定的对象身份仍来自框那一套。
+
+**为什么不让掩码顶替框做匹配？（我的分析，论文未直接讨论）**
+
+- **开销**：算框 IoU 只要 4 个数；算 mask 重叠要先为每个候选生成完整掩码，N=100 个槽位的代价高得多；
+- **数值性质**：p.21 强调框损失用 min/max 线性函数，梯度行为好；DICE 按对象归一化，天然是「匹配 AFTER」的损失，不适合当匹配代价；
+- **stuff 的区分度**：stuff（天空/草地）的掩码可以覆盖大半张图，多个 stuff 槽位的 mask 重叠会很相似，框至少还有位置/尺度的区分；
+- 但原则上并非不可行——后续通用分割工作确实有改用掩码做匹配的（论文之外，此处不展开）。
+
+**一句话**：框不是冗余，它是集合预测框架的**匹配接口**；删掉框，匹配就没了，整条训练链就断了。
 ## 关键摘录
 
 > "We present a new method that views object detection as a direct set prediction problem."（第 1 页）
