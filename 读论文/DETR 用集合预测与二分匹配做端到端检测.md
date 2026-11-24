@@ -347,6 +347,18 @@ $L_{Hungarian}(y, yhat) = sum_i [ -log p_{sigma(i)}(c_i) + 1_{c_i != 空} L_{box
 - **工程上极轻**：冻结主干、25 epoch 微调 mask head 就拿到 SOTA，说明这套表征的可迁移性远超它自己的检测分数。
 
 **和前面问题的呼应**：问 2 里说「去重被学进自注意力、不需要 NMS」，这里 argmax 是同一个哲学在像素维度的翻版——**用架构/规则的内在性质保证互斥，而不是靠外部后处理裁剪**。
+### 补充澄清：mask 头会输出框吗？
+
+**不会。** 框和掩码来自**两个不同的头**，共享同一个 decoder embedding 作为输入：
+
+- **框**：由主 DETR 的预测 FFN 出（第 7 页：3 层 MLP + linear，输出类别与归一化框坐标）；全景分割时它照样对所有 stuff/thing 类预测框（第 15 页），因为匈牙利匹配要用框距离。
+- **掩码**：新增的 mask head 只输出掩码——Fig.8（第 15 页）的数据流是 `Box embeddings (d×N)` + `Encoded image` → 多头注意力热图 → FPN 式 CNN → `Masks logits (N×H/4×W/4)` → 逐像素 argmax。**输出端没有任何框**。
+
+**Fig.8 里 `Box embeddings` 这个名字是误会的来源**：它是**输入**，指每个槽位对应的 decoder 输出 embedding（d 维向量），只是因为它与那个被预测出来的框绑定，所以叫 box embedding；它不是框坐标，更不是 mask head 的产物。
+
+**两个佐证**：① 两阶段训练是「冻结全部权重，只训 mask head 25 epoch」（第 15 页）——如果 mask head 要出框，这个冻结方案根本不成立；② 第 15 页明说 mask head「predicts a binary mask for each of the predicted boxes」——框是**给定条件**，掩码才是它的输出。
+
+顺带一个细节：本文**没有**把框坐标当特征喂给 mask head 做 ROI 裁剪或位置偏置——第 4 页批评同类方法时说它们用了「proposal box coordinates」这类人工上下文特征，而本文要尽量减少先验。掩码定位完全靠「decoder embedding 去 query encoder 特征图」的注意力实现。
 ## 关键摘录
 
 > "We present a new method that views object detection as a direct set prediction problem."（第 1 页）
