@@ -67,13 +67,13 @@ $$\mathcal{L}_{\text{Hungarian}}(y,\hat{y})=\sum_{i=1}^{N}\left[-\log\hat{p}_{\h
 
 ### 2. 架构：CNN → 编码器 → 并行解码器 → FFN（第 6–7 页，Fig. 2）
 
-| 模块 | 输入/输出 | 关键点 |
-|---|---|---|
-| **CNN backbone** | $x\in\mathbb{R}^{3\times H_0\times W_0}$ → $f\in\mathbb{R}^{C\times H\times W}$ | ResNet-50/101，$C=2048$，$H,W=H_0/32,W_0/32$ |
-| **1×1 卷积** | 降到 $d=256$，空间维拉平 | 得到 $d\times HW$ 的序列 |
-| **Transformer 编码器** | 6 层 self-attention + FFN | 补**固定正弦位置编码**（无位置信息则置换不变，无法定位） |
-| **Transformer 解码器** | N 个 **object queries** → N 个输出 embedding | **非自回归**：每层并行解码 N 个物体，不像 [47] 那样逐词生成 |
-| **预测 FFN** | 3 层 MLP（ReLU，隐维 $d$）+ linear | 出归一化框坐标（softmax 出类）；**N 个槽位共享参数** |
+| 模块                  | 输入/输出                                                                           | 关键点                                        |
+| ------------------- | ------------------------------------------------------------------------------- | ------------------------------------------ |
+| **CNN backbone**    | $x\in\mathbb{R}^{3\times H_0\times W_0}$ → $f\in\mathbb{R}^{C\times H\times W}$ | ResNet-50/101，$C=2048$，$H,W=H_0/32,W_0/32$ |
+| **1×1 卷积**          | 降到 $d=256$，空间维拉平                                                                | 得到 $d\times HW$ 的序列                        |
+| **Transformer 编码器** | 6 层 self-attention + FFN                                                        | 补**固定正弦位置编码**（无位置信息则置换不变，无法定位）             |
+| **Transformer 解码器** | N 个 **object queries** → N 个输出 embedding                                        | **非自回归**：每层并行解码 N 个物体，不像 [47] 那样逐词生成       |
+| **预测 FFN**          | 3 层 MLP（ReLU，隐维 $d$）+ linear                                                    | 出归一化框坐标（softmax 出类）；**N 个槽位共享参数**          |
 
 ![DETR 图2 架构](DETR%20图2%20架构.png)
 
