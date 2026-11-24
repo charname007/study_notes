@@ -293,6 +293,60 @@ $L_{Hungarian}(y, yhat) = sum_i [ -log p_{sigma(i)}(c_i) + 1_{c_i != 空} L_{box
 3. 丢掉小于 4 像素的空 mask。
 
 **与 Table 5 数字的关系**：DETR-R101 PQ 45.1 超过 PanopticFPN++ 的 44.1，胜在 stuff（37.0 vs 33.6）。但要注意它的 **mask AP 落后 6.7**（33.0 vs 39.7）——argmax 让掩码「干净、不重叠」，却没能提升单张 mask 的质量。PQ 赢在分配规则，不赢在分割精度。
+## 4.4 节精读：全景分割这一段怎么读
+
+> 2026-11-24 追记。你选中的文字虽然标着第 14 页，但实际跨 **第 14–16 页**：4.4 节标题在 p.14，Fig.8/Fig.9 和 mask head 结构、训练策略在 **p.15**，argmax 合并与结果讨论在 **p.16**。下面按这条线拆。
+
+### 一、这一节想证明什么
+
+作者在开头用了一个类比（第 14 页）：**Faster R-CNN 加 mask head 变成 Mask R-CNN，DETR 加 mask head 就能做全景分割**。但真正的论点不是「多了个头」，而是那个词——**unified way（统一方式）**：stuff（天空、草地、路面）和 thing（人、车、长颈鹿）走**同一套接口**，不分成两条流水线。COCO 全景标注里有 80 个 thing 类 + 53 个 stuff 类（第 15 页）。
+
+### 二、最容易困惑的点：既然要分割，为什么还要预测框？
+
+第 15 页原话讲得很直白：**Predicting boxes is required for the training to be possible, since the Hungarian matching is computed using distances between boxes.**
+
+也就是说——**框在这里只是「匹配的媒介」，不是最终产物**。DETR 整套框架的地基是「匈牙利匹配 + 集合损失」，而匹配需要一个能算距离的几何量；框正好提供这个距离（GIoU + L1）。所以扩展到分割任务时，作者没有另起炉灶，而是让 DETR 继续预测 stuff/thing 的框，用它完成一对一匹配，然后**在已匹配的槽位上**挂 mask head。
+
+这一步体现了很强的设计一致性：**新任务必须兼容原有的匹配机制**。理解这一点，后面「为什么 mask head 输入是 decoder 输出」就顺了——匹配的身份来自 query 槽位，mask 自然也得挂在同一批槽位上。
+
+### 三、mask head 到底在做什么（第 15 页，Fig.8）
+
+四步链路：
+
+1. **输入**：transformer decoder 对每个对象的输出 embedding（就是那个已经匹配好的槽位的语义向量）；
+2. **定位**：拿这个 embedding 去 **query 编码器输出的特征图**，算 M 个头的注意力分数，生成 **M 张小分辨率注意力热图**（注意：不是去 query 原图，是 query encoder 特征——全局信息已经在那儿了）；
+3. **提分辨率**：一个 **FPN 式 CNN**，借 ResNet 的 Res2/Res3/Res4/Res5 多层特征逐级上采样，把热图抬到 **stride 4** 的 mask logits；
+4. **监督**：每张 mask 独立用 **DICE/F-1 loss + Focal loss**——前者管区域重合（对小目标友好、缓解前景背景不平衡），后者管难分类像素。
+
+直觉：**decoder embedding 回答「这是什么物体」，注意力热图回答「它在哪」，FPN 把「在哪」说清楚到像素级**。三者拼起来就是一张实例掩码。
+
+### 四、训练策略：为什么选两阶段（第 15 页）
+
+两条路都试了：① 联合训练；② 先只训框 → **冻结全部权重** → 只训 mask head **25 个 epoch**。结果**相近**，作者选后者，理由很实在——**总实际训练时间更短**。
+
+这句话的信息量比字面大：它说明 DETR 训出来的**框表征本身已经足够好**，mask head 只是一个轻量适配层，不需要端到端重训整个检测器。这也是为什么后面它能迁移到别的像素级任务。
+
+### 五、推理时的合并：接上一轮的 argmax 回答（第 16 页）
+
+完整流水线四步：① 滤掉置信度 < 85% 的检测 → ② **逐像素 argmax**（所有 mask 在同一像素比分数，赢家通吃，天然不重叠）→ ③ 同一 stuff 类的多张 mask 合并成一张（stuff 不分实例）→ ④ 丢掉 < 4 像素的空 mask。
+
+关键收益（第 16 页原话）：This procedure guarantees that the final masks have no overlaps, and therefore, DETR does not require a heuristic that is often used to align different masks——**省掉了 Panoptic FPN 那套 thing/stuff 优先级对齐的人工规则**。
+
+### 六、结果与解释（第 16 页，Table 5）
+
+- DETR-R101 **PQ 45.1**，超过 PanopticFPN++ R101 的 44.1 与 UPSNet-M 的 43.0；COCO test set **46 PQ**；
+- 优势集中在 **stuff：37.0 vs 33.6**，作者归因于**编码器的全局推理**——这与本文前面消融的结论完全闭环（第 10–11 页：编码器负责实例分离、全局场景推理，去掉后大物体掉 6.0 AP）；
+- **但 mask AP 落后基线最多 8 mAP**（33.0 vs 39.7），PQth 却仍具竞争力。诚实读法：**DETR 的单张掩码质量并不占优，它赢在「分配规则干净 + stuff 处理得好」**。
+
+### 七、我的整体理解：这一节真正的价值
+
+不是「DETR 也能做分割」这个结论，而是三件事：
+
+- **集合预测范式是任务无关的**：换任务只换输出头，匹配的骨架不动；框只是匹配的接口，不是检测的终点；
+- **全局注意力的红利在 stuff 上兑现**：前面消融说「编码器分离实例」，这里 stuff 的领先就是同一个机制在像素级任务上的回报——两处解释互相印证，不是孤立的实验现象；
+- **工程上极轻**：冻结主干、25 epoch 微调 mask head 就拿到 SOTA，说明这套表征的可迁移性远超它自己的检测分数。
+
+**和前面问题的呼应**：问 2 里说「去重被学进自注意力、不需要 NMS」，这里 argmax 是同一个哲学在像素维度的翻版——**用架构/规则的内在性质保证互斥，而不是靠外部后处理裁剪**。
 ## 关键摘录
 
 > "We present a new method that views object detection as a direct set prediction problem."（第 1 页）
