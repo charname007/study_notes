@@ -139,11 +139,176 @@ AdaIN 只迁移全局统计量（均值/方差），风格图里的局部几何�
 - 条件需要**逐位置不同** → 必须让 $\gamma,\beta$ 带空间维，否则信息被抹平。[2]
 - 只想**极小代价微调** → scale/shift 也能当 PEFT 用，SSF 仅约 0.3M 参数即超越全量微调。[8]
 
+## 各变体的具体公式
+
+记号统一如下：$x$ 为输入特征，$\mu,\sigma$ 为归一化统计量，$\gamma,\beta$ 为调制参数，$c$ 为条件信号，$\odot$ 为逐元素乘。。[1]
+
+### 0. 母公式：所有变体都是它的特例
+
+$$\boxed{\;y=\gamma(c)\odot\hat{x}+\beta(c)\;}$$
+
+差别只有三处：$\hat{x}$ 怎么归一化、$\gamma,\beta$ 的形状（标量 / 向量 / 张量）、$\gamma,\beta$ 从哪里来。。[1][2]
+
+### 1. FiLM（Perez et al. 2018）
+
+生成器由条件 $x_i$ 回归两组参数，再逐特征做仿射。[1]
+
+$$\gamma_{i,c}=f_c(x_i),\qquad \beta_{i,c}=h_c(x_i)$$
+
+$$\mathrm{FiLM}(F_{i,c}\mid\gamma_{i,c},\beta_{i,c})=\gamma_{i,c}F_{i,c}+\beta_{i,c}$$
+
+实现上用残差形式输出尺度，避免零初始化抹掉梯度。[1]
+
+$$\gamma_{i,c}=1+\Delta\gamma_{i,c}$$
+
+**特点**：$\gamma,\beta$ 是每通道一个标量，**没有归一化步骤**，直接对原始激活做仿射。参数量为 $2C$，与空间分辨率无关。[1]
+
+### 2. Conditional Instance Normalization（Dumoulin et al. 2017）
+
+把 IN 的 $\gamma,\beta$ 扩展成 $N\times C$ 矩阵，按风格索引 $s$ 取行。[15]
+
+$$\mathrm{CIN}(x;s)=\gamma_s\left(\frac{x-\mu(x)}{\sigma(x)}\right)+\beta_s$$
+
+$\mu,\sigma$ 沿空间轴计算，$\gamma_s,\beta_s$ 即矩阵的第 $s$ 行。。[15]
+
+**特点**：参数量 $O(N\times L)$，$N$ 为风格数、$L$ 为特征图总数；32 种风格的参数只占网络约 0.2%。[15]
+
+**副产品**：$\gamma,\beta$ 可做凸组合插值来混合风格：
+
+$$\gamma=\alpha\gamma_1+(1-\alpha)\gamma_2$$
+
+### 3. Conditional Batch Normalization（de Vries et al. 2017）
+
+BN 的 $\gamma,\beta$ 由语言嵌入 $e_q$ 经 MLP 预测，且**预测的是增量**，保证训练初期等价于预训练 ResNet。[4]
+
+$$\hat{\beta}_c=\beta_c+\Delta\beta_c,\qquad \hat{\gamma}_c=\gamma_c+\Delta\gamma_c$$
+
+$$\mathrm{BN}(F_{i,c,h,w}\mid\hat{\gamma}_c,\hat{\beta}_c)$$
+
+其中 $\Delta\beta=\mathrm{MLP}(e_q)$、$\Delta\gamma=\mathrm{MLP}(e_q)$，输出维度为 $C$。
+
+**关键细节**：ResNet 全部参数（含 $\gamma,\beta$）冻结，只训练 MLP；BN 参数不到总参数 1%。[4]
+
+### 4. AdaIN（Huang & Belongie 2017）
+
+**没有可学习参数**，$\gamma,\beta$ 直接取自风格图的统计量。[3]
+
+$$\mathrm{AdaIN}(x,y)=\sigma(y)\left(\frac{x-\mu(x)}{\sigma(x)}\right)+\mu(y)$$
+
+逐通道展开写就是：
+
+$$\mathrm{AdaIN}(x,y)_c=\sigma_c(y)\cdot\frac{x_c-\mu_c(x)}{\sigma_c(x)}+\mu_c(y)$$
+
+**特点**：把内容特征的一阶、二阶统计量直接替换成风格的，等价于对齐通道均值与方差；比 Gram 矩阵快几个数量级。[3]
+
+### 5. SPADE（Park et al. 2019）
+
+$\gamma,\beta$ 从**标量升级为空间张量**，由分割图 $m$ 经两层卷积得到。[2]
+
+$$\gamma^i_{c,y,x}(m)\,\frac{h^i_{n,c,y,x}-\mu^i_c}{\sigma^i_c}+\beta^i_{c,y,x}(m)$$
+
+其中通道统计量为：
+
+$$\mu^i_c=\frac{1}{NH^iW^i}\sum_{n,y,x}h^i_{n,c,y,x}$$
+
+$$\sigma^i_c=\sqrt{\frac{1}{NH^iW^i}\sum_{n,y,x}\left((h^i_{n,c,y,x})^2-(\mu^i_c)^2\right)}$$
+
+**退化关系**（论文明确给出）：令 $\gamma,\beta$ 与位置无关即得 Conditional BN；再令 $N=1$ 并用真实图像替换掩码即得 AdaIN。[2]
+
+### 6. AdaGN（Dhariwal & Nichol 2021）
+
+时间步与类别嵌入线性投影出 $y=[y_s,y_b]$，调制 GroupNorm 的输出。[16]
+
+$$\mathrm{AdaGN}(h,y)=y_s\,\mathrm{GroupNorm}(h)+y_b$$
+
+**归属提醒**：AdaGN 出自《Diffusion Models Beat GANs》，不是 DDPM；DDPM 只是把时间步嵌入加性注入。消融显示 AdaGN 的 FID 为 13.06，而「加性 + GroupNorm」为 15.08。[16]
+
+### 7. adaLN / adaLN-Zero（Peebles & Xie 2023）
+
+条件 $c=t_{\text{emb}}+y_{\text{emb}}$ 经一个 MLP 回归出**六个**向量，分别对应两个子层的 scale / shift / gate。[6]
+
+$$(\gamma_1,\beta_1,\alpha_1,\gamma_2,\beta_2,\alpha_2)=\mathrm{MLP}(c)\in\mathbb{R}^{6D}$$
+
+$$h_l=x_l+\alpha_1(c)\odot\mathrm{Attn}\Big((1+\gamma_1(c))\odot\mathrm{LN}(x_l)+\beta_1(c)\Big)$$
+
+$$x_{l+1}=h_l+\alpha_2(c)\odot\mathrm{FFN}\Big((1+\gamma_2(c))\odot\mathrm{LN}(h_l)+\beta_2(c)\Big)$$
+
+其中 $\mathrm{LN}$ 是**无可学习参数**的 LayerNorm（`elementwise_affine=False`）。[6]
+
+**adaLN-Zero 的关键**：把调制 MLP 的最后一层权重与偏置**零初始化**，于是训练第 0 步 $\gamma_k=\beta_k=\alpha_k=\mathbf{0}$，每个 block 严格等价于恒等映射：
+
+$$W_{\text{cond}}=\mathbf{0},\quad b_{\text{cond}}=\mathbf{0}\;\Longrightarrow\;x_{l+1}=x_l$$
+
+对应 PyTorch 实现：
+
+```python
+def modulate(x, shift, scale):
+    return x * (1 + scale.unsqueeze(1)) + shift.unsqueeze(1)
+
+shift_msa, scale_msa, gate_msa, \
+shift_mlp, scale_mlp, gate_mlp = self.adaLN_modulation(c).chunk(6, dim=1)
+x = x + gate_msa.unsqueeze(1) * self.attn(modulate(self.norm1(x), shift_msa, scale_msa))
+x = x + gate_mlp.unsqueeze(1) * self.mlp(modulate(self.norm2(x), shift_mlp, scale_mlp))
+```
+
+**为什么用 $1+\gamma$ 而不是 $\gamma$**：零初始化时 $\gamma=0$，若直接乘 $\gamma$ 会把特征整体清零；写成 $1+\gamma$ 则恒等退化为恒等映射，这也是 FiLM 用 $\Delta\gamma$ 的同一动机。[6][1]
+
+消融结果：adaLN-Zero 的 FID 19.47，优于 adaLN 的 25.21 与 cross-attention 的 26.14。[6]
+
+### 8. StyleGAN2 权重调制与解调制（Karras et al. 2020）
+
+调制**搬进卷积权重**，不做数据相关归一化。[5]
+
+调制（按输入通道 $i$ 缩放）：
+
+$$w'_{ijk}=s_i\cdot w_{ijk}$$
+
+解调制（按输出通道的 L2 范数归一）：
+
+$$w''_{ijk}=\frac{w'_{ijk}}{\sqrt{\sum_{i,k}(w'_{ijk})^2+\epsilon}}$$
+
+**推导依据**：设输入激活 i.i.d. 且单位方差，则调制加卷积后输出标准差为
+
+$$\sigma_j=\sqrt{\sum_{i,k}(w'_{ijk})^2}$$
+
+故除以 $\sigma_j$ 即可把输出拉回单位方差——**不用看实际特征内容**。这正是它能消除水滴伪影的原因。[5]
+
+### 9. SSF：把 scale/shift 当参数高效微调（Lian et al. 2022）
+
+冻结预训练权重，只在每个算子后插入可学习的 scale/shift。[8]
+
+$$y=\gamma\odot x+\beta$$
+
+与前面变体的区别：$\gamma,\beta$ **与输入无关**（不是由条件生成，而是直接作为自由参数学习），且推理时可重参数化合并回原权重。[8]
+
+### 10. 一张公式对照表
+
+| 变体 | 归一化 | $\gamma,\beta$ 形状 | 来源 | 是否有参数 |
+|---|---|---|---|---|
+| FiLM | 无 | $\mathbb{R}^{C}$ | MLP(条件) | 是 [1] |
+| CIN | IN | $\mathbb{R}^{N\times C}$ | 按风格索引查表 | 是 [15] |
+| CBN | BN | $\mathbb{R}^{C}$ | MLP(条件) 预测增量 | 是 [4] |
+| AdaIN | IN | $\mathbb{R}^{C}$ | 风格图统计量 | **否** [3] |
+| SPADE | BN/IN | $\mathbb{R}^{C\times H\times W}$ | 掩码经卷积 | 是 [2] |
+| AdaGN | GroupNorm | $\mathbb{R}^{C}$ | 时间步/类别投影 | 是 [16] |
+| adaLN | LayerNorm（无参） | $\mathbb{R}^{6D}$ | MLP($t+y$) | 是 [6] |
+| StyleGAN2 | 无（权重解调制） | 权重张量 | 风格向量逐通道 | 是 [5] |
+| SSF | 无 | $\mathbb{R}^{C}$ | 自由参数 | 是 [8] |
+
+### 11. 三个易混淆点
+
+**① AdaIN 无参数，AdaGN 有参数**。前者统计量来自风格图，后者来自条件投影，常被混为一谈。[3][16]
+
+**② FiLM 不归一化，adaLN 归一化**。FiLM 直接对激活仿射；adaLN 先做无参 LayerNorm 再仿射，两者的 $\gamma$ 语义不同。[1][6]
+
+**③ $\gamma$ 用 $1+\gamma$ 还是 $\gamma$，取决于初始化**。零初始化配 $1+\gamma$（恒等起点）；自由学习配 $\gamma$。用错会让训练初期整层失效。[6][1]
+
 ## 相关
 
 - [[各种Norm层的摆放]] — adaLN / AdaGN 在扩散模型中的位置
 - [[通道注意力]] — 同样做通道增益，但权重由输入自身统计得到，而非外部条件
 - [[小波变换]] — Light-MambaIR 用低频系数调制高频子带（第二个家族）
+
 ### 待建笔记
 
 以下为本文涉及但库中尚无独立笔记的概念，暂以纯文本记录：MMDiT（SD3 的双流联合注意力）、SPADE 的空间张量调制、StyleGAN2 的权重解调制。
@@ -164,3 +329,8 @@ AdaIN 只迁移全局统计量（均值/方差），风格图里的局部几何�
 [12] Wang et al. (2020). *Normalization Techniques in Training DNNs: Methodology, Analysis and Application*. https://arxiv.org/abs/2009.12836
 [13] Zero to Frontier. *U-Nets, DiT, and MMDiT*. https://zerotofrontier.app/image-video-generation/architectures
 [14] Neel Mishra. *Conditional Normalization: AdaIN, FiLM, SPADE, and DiT AdaLN-Zero*. https://neelmishra.github.io/blog/dl/normalization/conditional-normalization-adain-film-adaln.html
+
+### 公式章节补充来源
+
+[15] Dumoulin, Shlens, Kudlur (2017). *A Learned Representation for Artistic Style*（Conditional Instance Normalization，Eq.5）. https://ar5iv.labs.arxiv.org/html/1610.07629v5
+[16] Dhariwal & Nichol (2021). *Diffusion Models Beat GANs on Image Synthesis*（AdaGN 出处，非 DDPM）. https://arxiv.org/html/2105.05233v4
