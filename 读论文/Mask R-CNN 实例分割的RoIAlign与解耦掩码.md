@@ -215,6 +215,7 @@ $L = L_{cls} + L_{box} + L_{mask}$
 
 ## 相关笔记
 
+- [[Mask R-CNN 追问 对齐、解耦与掩码尺寸还原]] — 本文的**追问补编**：逐像素 sigmoid 为何不能换 softmax（+5.5 AP 全来自训练动力学）、RoIAlign 两次量化的数值误差与 RoIWarp 控制变量、以及掩码 28×28 如何 resize 回 RoI 再贴回原图
 - [[Restormer 高效高分辨率图像修复 Transformer]] — 同样在改"从特征图里怎么取东西"：Restormer 把注意力搬到通道维降复杂度；本文的 RoIAlign 是把**取样的坐标**从量化改成连续。可对照理解"结构 vs 取样"两条优化路线
 - [[FlashAttention 精确注意力与IO感知]] — 都是"不动语义、只动底层算子"的胜利：FlashAttention 改的是**数据搬哪**，RoIAlign 改的是**像素取哪**
 - [[PAGRN 渐进式注意力引导循环网络]] — 同样靠一个干净的反直觉设计拿分：PAGRN 是"注意力乘完不求和、继续传给下一层"，本文是"掩码只在自己那一类上算 loss"
