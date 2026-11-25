@@ -401,6 +401,22 @@ DETR 的骨架是集合预测，第一步永远是「哪个槽位配哪个真值
 - 第 15 页全景分割时，这个分类头对 **stuff 和 thing 都预测框和类别**（53 个 stuff + 80 个 thing），所以类别词表比纯检测时更大。
 
 **易混点**：「生成框」和「生成类别」不是两个先后步骤，而是共享预测头的一次并行输出；mask head 则是另一套头，只出掩码不出框/类（见上一条）。
+## 主要创新点（一句话清单）
+
+> 2026-11-25 追记。论文自己在第 2 页给了权威表述：「the main features of DETR are the conjunction of the bipartite matching loss and transformers with (non-autoregressive) parallel decoding」——注意是**两者的结合**才是创新，单拎任何一半都不成立。
+
+1. **把检测重定义为直接集合预测（direct set prediction）**（第 1、5 页）。不再在 proposal/anchor/中心点上做代理回归，而是一次性输出一个无序集合；这是总纲，后面几条都服务于它。
+2. **二分匹配 + 匈牙利损失**（第 3、5 页）。匈牙利算法求预测↔真值的一对一最优置换，构造出**置换不变**的损失（第 3 页原文：enforces permutation-invariance, guarantees each target element has a unique match）。它替代了传统检测器的启发式分配规则，且是**一对一**的，从损失层面消灭重复——**NMS 与 anchor 生成因此被删掉**（第 1–2 页）。
+3. **Transformer 编码器-解码器 + 非自回归并行解码**（第 2、7 页）。以前的直接集合预测工作（如 Stewart 等的 RNN 检测器）是**自回归**的、只在小数据集上验证；DETR 用 self-attention 显式建模所有预测对之间的关系（第 2 页），把 N 个 query **并行**解码。作者明确说「previous work focused on autoregressive decoding with RNNs」（第 2 页）——这是与前人拉开差距的关键。
+4. **object query 作为可学习的槽位身份**（第 7 页）。解码器置换不变，故用 N 个 learned positional embedding 让槽位各不相同；它们是**语义空间里的隐式 anchor**，且实验证明无强类别专化（长颈鹿 13→24，第 14 页）。
+5. **GFIoU 框损失 = ℓ1 + 广义 IoU**（第 6、21 页）。直接回归绝对框带来尺度问题，尺度不变的 GIoU 与 ℓ1 互补——消融显示只留 ℓ1 掉 4.8 AP、只留 GIoU 掉 0.7 AP（Table 4，第 13 页）。
+6. **辅助解码损失**（第 7 页）。每个解码层后都接预测头 + 匈牙利损失（参数共享），帮助模型输出正确数量的物体，也让逐层分析成为可能。
+7. **简洁通用的实现范式**（第 6 页）。不需要定制化层，任何有 CNN + Transformer 的框架都能实现，推理代码 <50 行；作者把它当作吸引研究者加入检测领域的卖点。
+8. **一个骨架通吃多个任务**（第 1、14–16 页）。加 mask head 就把同一套集合预测用到全景分割，stuff/thing 统一处理，PQ 45.1 超过 PanopticFPN++（第 16 页）。
+
+**不是创新的地方（避免误记）**：Transformer、匈牙利算法本身都是现成的（第 3 页引 Kuhn 1955、Vaswani 2017）；单独用二部图损失做检测、用可学习 NMS/关系网络做去重也有前人（第 4 页）。DETR 的原创性在于**把「一对一匹配 + Transformer 并行解码 + 集合损失」组合成一个端到端、无后处理、可 competitive 的完整检测器**——第 2 页说得很直白：previous attempts 要么加先验、要么打不过强基线，本文 bridged this gap。
+
+**代价也要一起记**：小物体弱（AP_S 20.5 vs 26.6，第 9–10 页）、训练极长（500 epoch / 16 卡 3 天，第 9 页）、编码器注意力 O((HW)²)（第 22 页）。这三点催生了 Deformable DETR 等后续工作。
 ## 关键摘录
 
 > "We present a new method that views object detection as a direct set prediction problem."（第 1 页）
