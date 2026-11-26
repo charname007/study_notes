@@ -40,7 +40,8 @@ tags: [论文, 场景文本识别, 知识蒸馏, 低分辨率, 对比学习]
 
 1. **去分辨率域信息**：先做均值-方差归一化 $	ilde F=(F-mu)/sigma$，其中 $mu,sigmainmathbb{R}^{N	imes C}$ 是全局平均池化与标准差池化；再用**余弦相似度**只量方向一致性（式 1–2）。
 2. **掩码蒸馏**：Fig.1(c) 说明字符特征比背景更难学、也更重要；于是拿**教师分支的注意力图当软掩码 $M$**，给像素重新加权，让学生聚焦字符区、屏蔽背景噪声（式 3）：
-   $$L_{visual}=1-rac{1}{N}rac{1}{C}sum_{i=1}^{N}sum_{j=1}^{C}langle M	ilde F^{tea}_{i,j},,M	ilde F^{stu}_{i,j}angle$$
+   $$L_{visual}=1-rac{1}{N}rac{1}{C}sum_{i=1}^{N}sum_{j=1}^{C}langle M	ilde F^{tea}_{i,j},,M	ilde F^{stu}_{i,j}
+angle$$
    作者指出主流识别器（ABINet、MATRN、PIMNet 等）基本都是注意力式的，所以 $M$ 很容易拿到（p.4）。
 
 ### 第二层 · 语义对比损失：搬「上下文语义」，实例按字符序对齐（p.4 §3.3.2，式 4–5）
