@@ -96,6 +96,20 @@ $$\mathrm{TSSIM}(x,y,z)=\frac{(\mu_x\mu_y+\mu_y\mu_z+\mu_x\mu_z+C_1)(\sigma_{xy}
 
 $$\mathcal{L}_{TSC}(X,Y;\mathbf{D})=1-\mathrm{TSSIM}\big(D\mathcal{F}(Y),\mathcal{F}(DY),DX\big)$$
 
+**推导细节（补充材料）**：TSSIM 同样拆成亮度/对比度/结构三项之积 $l\cdot c\cdot s$，三项分别是 [6]
+
+$$l=\frac{\mu_X\mu_Y+\mu_Y\mu_Z+\mu_X\mu_Z+C_1}{\mu_X^2+\mu_Y^2+\mu_Z^2+C_1}$$
+
+$$c=\frac{\sigma_X\sigma_Y+\sigma_Y\sigma_Z+\sigma_X\sigma_Z+C_2}{\sigma_X^2+\sigma_Y^2+\sigma_Z^2+C_2}$$
+
+$$s=\frac{\sigma_{XY}+\sigma_{YZ}+\sigma_{XZ}+C_3}{\sigma_X\sigma_Y+\sigma_Y\sigma_Z+\sigma_X\sigma_Z+C_3}$$
+
+令 $C_3=C_2$ 即可把 $c\cdot s$ 合并成主论文中的紧凑形式。[6]
+
+**这回答了我的疑问②**：TSSIM 并不是 SSIM 的严格数学推广，而是**把 SSIM 中所有「两两配对求和」机械地扩成「三三配对求和」**——分子分母每一项都从 2 项变成 3 项。它是一个**一致的工程化扩展**，但没有像原 SSIM 那样给出理论性质（如 Weber 定律一致性）的证明。[6][5]
+
+常数与主论文一致：$C_1=0.01$、$C_2=0.03$。[6]
+
 **TSC Loss 是通用的，这点很实用**——它不只对 TATT 有效（Table 2）：[1]
 
 | 模型 | 无 TSC | 有 TSC | 增益 |
@@ -112,6 +126,18 @@ $$\mathcal{L}_{TSC}(X,Y;\mathbf{D})=1-\mathrm{TSSIM}\big(D\mathcal{F}(Y),\mathca
 $$\mathcal{L}=\mathcal{L}_{SR}+\alpha\mathcal{L}_{TP}+\beta\mathcal{L}_{TSC}$$
 
 $\mathcal{L}_{SR}$ 是 L2，$\mathcal{L}_{TP}$ 是 L1 + KL 散度，$\alpha=1$、$\beta=0.1$。[1]
+
+**参数是怎么定的（补充材料）**：先固定一侧扫描另一侧，发现**文本先验损失权重过大会损害重建质量**（超过 1 后所有指标下降），最终有效配置是「先验损失权重 1、TSC 损失权重 0.1」。TSC 权重取 0.1 时识别率 52.6% 最优，取 1 时 PSNR 掉到 21.12，取 10 时 20.97。[6]
+
+### ④ 退化鲁棒性的具体设置（补充材料）
+
+在三套识别数据集上人为施加三类退化：[6]
+
+| 退化 | 参数 |
+|---|---|
+| 对比度变化 | $\hat{Y}=k_1Y+k_2$，$k_1=1.9$、$k_2=0.44$ |
+| 高斯模糊 | $5\times5$ 核，$\sigma=1$ |
+| 高斯噪声 | $\sigma=50$ |
 
 ## 结论与局限
 
@@ -159,10 +185,10 @@ $\mathcal{L}_{SR}$ 是 L2，$\mathcal{L}_{TP}$ 是 L1 + KL 散度，$\alpha=1$�
 
 ## 我的疑问
 
-- [ ] RPE 的具体实现细节放在补充材料里，它和标准可学习位置编码的本质差别是什么？论文只给了「+1.8%」这个结果。
-- [ ] TSSIM 的三元扩展在数学上是否是 SSIM 的严格推广？还是只是「三对配对求平均」的工程写法？
-- [ ] 既然 TSC Loss 对 TSRN 能提 +4.3%，为什么作者的消融里 TATT 自己只提 +1.0%？是因为 TATT 已部分解决了形变，还是 TSC 与 TPI 的作用有重叠？
-- [ ] 全局注意力导致的复杂度增长，在实际最长文本（15 字符以上）时到底有多严重？论文未给量化。
+- [x] ~~RPE 的具体实现细节~~ **已解决（补充材料）**：一组可学习序列参数 → BiGRU 双向处理后拼接 → reshape 加到图像特征上。与标准可学习位置编码的差别是**带双向循环结构、能利用相邻依赖**，而非只提供绝对位置坐标。[6]
+- [x] ~~TSSIM 是否为严格推广~~ **已解决（补充材料）**：不是严格推广，而是把 SSIM 的三项（亮度/对比度/结构）里**每一个两两配对都机械扩成三三配对**；没有 Weber 定律一类的理论性质证明。[6]
+- [ ] 既然 TSC Loss 对 TSRN 能提 +4.3%，为什么作者的消融里 TATT 自己只提 +1.0%？**补充材料未回答**——它只给了参数扫描，没有做 TPI×TSC 的交叉消融。我的猜测是二者在「形变鲁棒性」上部分重叠。
+- [ ] 全局注意力导致的复杂度增长，在实际最长文本时到底多严重？**补充材料也未量化**，只重复了「随文本长度指数增长」的说法。
 
 ## 关键摘录
 
@@ -194,3 +220,4 @@ $\mathcal{L}_{SR}$ 是 L2，$\mathcal{L}_{TP}$ 是 L1 + KL 散度，$\alpha=1$�
 [3] https://arxiv.org/abs/2106.15368 — TPGSR 2021 — 被对比的文本先验基线
 [4] https://arxiv.org/abs/2005.03341 — TextZoom & TSRN 2020 — 基准数据集
 [5] https://ece.uwaterloo.ca/~z70wang/publications/ssim.pdf — Wang et al. 2004 — SSIM（TSSIM 的扩展基础）
+[6] file:///E:/Zotero/storage/9UMLFQND/TATT-supplementary.pdf — TATT 补充材料（RPE 细节 / TSSIM 推导 / 参数选择 / 退化设置）
